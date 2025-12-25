@@ -1,0 +1,95 @@
+# 一般配置
+name: ProPainter_Academic_Paper_Run1
+model_type: InpaintingModel
+num_gpu: 1
+manual_seed: 2023
+
+# 数据集配置
+datasets:
+  train:
+    name: AcademicData
+    type: VideoDataset
+    # 请确保这些路径指向你刚刚生成的单视频数据集
+    dataroot_gt: datasets/result_videos/academic_dataset_v1_frames/train/gt_video
+    dataroot_img: datasets/result_videos/academic_dataset_v1_frames/train/input_video
+    dataroot_mask: datasets/result_videos/academic_dataset_v1_frames/train/binary_mask
+    dataroot_alpha: datasets/result_videos/academic_dataset_v1_frames/train/alpha_map
+
+    # 训练参数
+    io_backend:
+      type: disk
+    num_worker_per_gpu: 4
+    batch_size_per_gpu: 1
+    dataset_enlarge_ratio: 1
+    prefetch_mode: ~
+
+    # 切片参数
+    num_frame: 5
+    gt_size: [432, 768] # 保持高清
+    use_flip: true
+    use_rot: false
+
+  val:
+    name: ValData
+    type: VideoDataset
+    dataroot_gt: datasets/result_videos/academic_dataset_v1_frames/test/gt_video
+    dataroot_img: datasets/result_videos/academic_dataset_v1_frames/test/input_video
+    dataroot_mask: datasets/result_videos/academic_dataset_v1_frames/test/binary_mask
+    dataroot_alpha: datasets/result_videos/academic_dataset_v1_frames/test/alpha_map
+    io_backend:
+      type: disk
+    num_frame: 5
+    gt_size: [432, 768]
+
+# 网络结构
+network_g:
+  type: ProPainter
+
+# 路径配置
+path:
+  pretrain_network_g: weights/ProPainter.pth
+  pretrain_network_flow: weights/raft-things.pth
+  pretrain_flow_comp: weights/recurrent_flow_completion.pth
+  resume_state: ~
+
+# 训练策略
+train:
+  # [核心修改] 暴力拉高物理权重，强迫模型利用残余像素反解水印
+  lambda_physics: 20.0
+
+  optim_g:
+    type: Adam
+    lr: !!float 2e-4 # 加速收敛
+    weight_decay: 0
+    betas: [0.9, 0.99]
+
+  scheduler:
+    type: CosineAnnealingRestartLR
+    periods: [5000]
+    restart_weights: [1]
+    eta_min: !!float 1e-7
+
+  total_iter: 5000
+  warmup_iter: -1
+
+  # 损失函数
+  pixel_opt:
+    type: L1Loss
+    loss_weight: 10.0 # [核心修改] 加大 Hole Weight，防止模型偷懒直接输出原图
+    reduction: mean
+  perceptual_opt:
+    type: PerceptualLoss
+    layer_weights:
+      'conv4_3': 1.0
+    vgg_type: vgg19
+    use_input_norm: true
+    range_norm: false
+    perceptual_weight: 1.0
+    style_weight: 0
+    criterion: l1
+
+# 日志配置
+logger:
+  print_freq: 10
+  save_checkpoint_freq: 1000
+  use_tb_logger: true
